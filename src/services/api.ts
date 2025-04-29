@@ -20,7 +20,7 @@ const api = axios.create({
 });
 
 // 请求拦截器，添加API密钥
-api.interceptors.request.use((config) => {
+api.interceptors.request.use((config: import('axios').InternalAxiosRequestConfig) => {
   const apiKey = localStorage.getItem('olmocr-api-key');
   if (apiKey) {
     config.headers['X-API-Key'] = apiKey;
@@ -148,5 +148,25 @@ export const apiService = {
       console.error("API Connection Check Failed:", error); // Log error for debugging
       return false;
     }
-  }
+  },
+
+  // 获取导出文件Blob (New function)
+  async getExportBlob(format: 'md' | 'docx' | 'html'): Promise<{ blob: Blob, filename: string }> {
+    const url = format === 'html' ? this.getExportHtmlUrl() : this.getExportUrl(format);
+    // Use the configured axios instance (api) to make the request
+    const response = await api.get<Blob>(url, { responseType: 'blob' });
+    
+    // Try to get filename from Content-Disposition header
+    let filename = `export.${format === 'html' ? 'zip' : format}`;
+    const disposition = response.headers['content-disposition'];
+    if (disposition) {
+      const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+      const matches = filenameRegex.exec(disposition);
+      if (matches != null && matches[1]) {
+        filename = matches[1].replace(/['"]/g, '');
+      }
+    }
+
+    return { blob: response.data, filename };
+  },
 };

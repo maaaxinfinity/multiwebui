@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
-import { useForm } from "react-hook-form";
+import { useForm, ControllerRenderProps, FieldValues } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { FilePond, registerPlugin } from "react-filepond";
@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { MainLayout } from "@/components/layout/main-layout";
 import { apiService } from "@/services/api";
 import { useTask } from "@/context/task-context";
+import { ProcessRequestParams } from "@/types/api";
 
 // 导入 FilePond 样式
 import "filepond/dist/filepond.min.css";
@@ -36,7 +37,7 @@ const processSchema = z.object({
 
 // Refine schema: ensure all params are defined when mode is 'normal'
 const refinedSchema = processSchema.refine(
-  (data) => {
+  (data: z.infer<typeof processSchema>) => {
     if (data.mode === "normal") {
       return (
         data.target_dim !== undefined &&
@@ -105,7 +106,7 @@ export default function HomePage() {
         max_retries: data.max_retries,
       };
         
-      const response = await apiService.processPdf(files[0].file, finalParams as any);
+      const response = await apiService.processPdf(files[0].file, finalParams as Omit<ProcessRequestParams, 'file'>);
 
       // 添加任务到任务列表
       addTask(response.task_id);
@@ -124,9 +125,11 @@ export default function HomePage() {
       let errorMsg = '处理失败';
       if (error instanceof z.ZodError) {
         // Combine messages from Zod issues
-        errorMsg = error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
+        errorMsg = error.errors.map((e: z.ZodIssue) => `${e.path.join('.')}: ${e.message}`).join(', ');
       } else if (error instanceof Error) {
         errorMsg = error.message;
+      } else if (typeof error === 'string') {
+        errorMsg = error;
       }
 
       toast.error("提交出错", { // Changed title for clarity
@@ -185,7 +188,7 @@ export default function HomePage() {
                   <FormField
                     control={form.control}
                     name="mode"
-                    render={({ field }) => (
+                    render={({ field }: { field: ControllerRenderProps<FieldValues, "mode"> }) => (
                       <FormItem>
                         <FormLabel>处理模式</FormLabel>
                         <Select
@@ -219,7 +222,7 @@ export default function HomePage() {
                           <FormField
                             control={form.control}
                             name="target_dim"
-                            render={({ field }) => (
+                            render={({ field }: { field: ControllerRenderProps<FieldValues, "target_dim"> }) => (
                               <FormItem>
                                 <FormLabel>目标尺寸</FormLabel>
                                 <FormControl>
@@ -233,7 +236,7 @@ export default function HomePage() {
                           <FormField
                             control={form.control}
                             name="anchor_len"
-                            render={({ field }) => (
+                            render={({ field }: { field: ControllerRenderProps<FieldValues, "anchor_len"> }) => (
                               <FormItem>
                                 <FormLabel>锚点长度</FormLabel>
                                 <FormControl>
@@ -248,7 +251,7 @@ export default function HomePage() {
                       <FormField
                         control={form.control}
                         name="max_context"
-                        render={({ field }) => (
+                        render={({ field }: { field: ControllerRenderProps<FieldValues, "max_context"> }) => (
                           <FormItem>
                             <FormLabel>最大上下文</FormLabel>
                             <FormControl>
@@ -269,7 +272,7 @@ export default function HomePage() {
                     <FormField
                       control={form.control}
                       name="error_rate"
-                      render={({ field }) => (
+                      render={({ field }: { field: ControllerRenderProps<FieldValues, "error_rate"> }) => (
                         <FormItem>
                           <FormLabel>最大错误率</FormLabel>
                           <FormControl>
@@ -284,7 +287,7 @@ export default function HomePage() {
                     <FormField
                       control={form.control}
                       name="max_retries"
-                      render={({ field }) => (
+                      render={({ field }: { field: ControllerRenderProps<FieldValues, "max_retries"> }) => (
                         <FormItem>
                           <FormLabel>最大重试次数</FormLabel>
                           <FormControl>

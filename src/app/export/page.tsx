@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { FileArchive, FileText, FileJson, Download } from "lucide-react";
+import { FileArchive, FileText, FileJson, Download, Loader2 } from "lucide-react";
+import { saveAs } from "file-saver";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { MainLayout } from "@/components/layout/main-layout";
@@ -19,35 +20,36 @@ export default function ExportPage() {
     docx: false,
   });
 
-  // 导出各种格式
+  // Export function using file-saver
   const handleExport = async (format: "html" | "md" | "docx") => {
-    setIsExporting((prev) => ({ ...prev, [format]: true }));
+    setIsExporting((prev: { html: boolean; md: boolean; docx: boolean }) => ({ ...prev, [format]: true }));
     try {
-      let url = "";
+      // Fetch the blob and filename using the apiService
+      const { blob, filename } = await apiService.getExportBlob(format);
+      
+      // Use file-saver to trigger the download
+      saveAs(blob, filename);
 
-      if (format === "html") {
-        url = apiService.getExportHtmlUrl();
-      } else {
-        url = apiService.getExportUrl(format);
-      }
-
-      // 打开新窗口下载
-      window.open(url, "_blank");
-
-      // 显示成功消息
-      toast.success(`${getFormatName(format)}导出请求已发送`, {
-        description: "如果文件准备好，浏览器将开始下载",
+      toast.success(`${getFormatName(format)} 导出成功`, {
+        description: `文件 ${filename} 已开始下载。`,
       });
-    } catch (error) {
+
+    } catch (error: unknown) {
       console.error(`Failed to export ${format}:`, error);
-      toast.error(`导出${getFormatName(format)}失败`, {
-        description: "请稍后重试",
+      let errorMsg = '无法连接到服务器或未经授权';
+      if (error instanceof Error) {
+         errorMsg = error.message;
+      } else if (typeof error === 'string') {
+         errorMsg = error;
+      }
+      
+      toast.error(`导出 ${getFormatName(format)} 失败`, {
+        description: errorMsg,
       });
     } finally {
-      // 短暂延迟后重置导出状态
       setTimeout(() => {
-        setIsExporting((prev) => ({ ...prev, [format]: false }));
-      }, 1000);
+        setIsExporting((prev: { html: boolean; md: boolean; docx: boolean }) => ({ ...prev, [format]: false }));
+      }, 500);
     }
   };
 
@@ -66,7 +68,7 @@ export default function ExportPage() {
   };
 
   // 获取格式图标
-  const getFormatIcon = (format: string) => {
+  const getFormatIcon = (format: string): React.ReactNode => {
     switch (format) {
       case "html":
         return <FileText className="h-12 w-12 text-blue-500" />;
@@ -105,11 +107,11 @@ export default function ExportPage() {
                 size="lg"
                 onClick={() => handleExport("html")}
                 disabled={isExporting.html}
-                className="gap-2"
+                className="gap-2 w-40"
               >
                 {isExporting.html ? (
                   <>
-                    <FileArchive className="h-5 w-5 animate-pulse" />
+                    <Loader2 className="h-5 w-5 animate-spin" />
                     导出中...
                   </>
                 ) : (
@@ -137,11 +139,11 @@ export default function ExportPage() {
                 size="lg"
                 onClick={() => handleExport("md")}
                 disabled={isExporting.md}
-                className="gap-2"
+                className="gap-2 w-40"
               >
                 {isExporting.md ? (
                   <>
-                    <FileArchive className="h-5 w-5 animate-pulse" />
+                    <Loader2 className="h-5 w-5 animate-spin" />
                     导出中...
                   </>
                 ) : (
@@ -169,11 +171,11 @@ export default function ExportPage() {
                 size="lg"
                 onClick={() => handleExport("docx")}
                 disabled={isExporting.docx}
-                className="gap-2"
+                className="gap-2 w-40"
               >
                 {isExporting.docx ? (
                   <>
-                    <FileArchive className="h-5 w-5 animate-pulse" />
+                    <Loader2 className="h-5 w-5 animate-spin" />
                     导出中...
                   </>
                 ) : (
