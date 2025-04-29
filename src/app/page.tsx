@@ -77,7 +77,7 @@ export default function HomePage() {
       target_dim: 1024, // Default for when switching to normal
       anchor_len: 32,   // Default for when switching to normal
       max_context: 512, // Default for when switching to normal
-      error_rate: 0.1,  // Default shown in fast mode (disabled)
+      error_rate: 0.03,  // Default shown in fast mode (disabled)
       max_retries: 3,   // Default shown in fast mode (disabled)
     },
   });

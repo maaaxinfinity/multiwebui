@@ -128,6 +128,15 @@ export const apiService = {
     return response.data;
   },
 
+  // 获取HTML预览文件内容 (New function)
+  async getHtmlPreviewContent(filename: string): Promise<string> {
+    const url = this.getHtmlPreviewUrl(filename); // Use existing URL generator
+    // Use the configured axios instance (api) to make the request
+    // Ensure the response is treated as text
+    const response = await api.get<string>(url, { responseType: 'text' }); 
+    return response.data;
+  },
+
   // 检查API连接
   async checkConnection(): Promise<boolean> {
     try {

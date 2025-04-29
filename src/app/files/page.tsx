@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Download, RefreshCw, ExternalLink, FileJson, FileText } from "lucide-react";
+import { Download, RefreshCw, ExternalLink, FileJson, FileText, Loader2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,9 @@ export default function FilesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("html");
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   // 加载文件列表
   const loadFiles = async () => {
@@ -43,7 +46,47 @@ export default function FilesPage() {
     loadFiles();
   }, []);
 
-  // 下载文件
+  // Fetch and load HTML preview content
+  const loadPreviewHtml = async (filename: string | null) => {
+    if (!filename) {
+      setPreviewHtml(null);
+      setPreviewError(null);
+      return;
+    }
+    setIsPreviewLoading(true);
+    setPreviewHtml(null);
+    setPreviewError(null);
+    try {
+      const htmlContent = await apiService.getHtmlPreviewContent(filename);
+      setPreviewHtml(htmlContent);
+    } catch (error) {
+      console.error("Failed to load HTML preview:", error);
+      setPreviewError("无法加载预览。请检查API密钥或联系管理员。");
+      toast.error("加载预览失败", {
+          description: error instanceof Error ? error.message : "无法连接到服务器或未经授权",
+      });
+    } finally {
+      setIsPreviewLoading(false);
+    }
+  };
+
+  // useEffect to load preview when selectedFile changes for HTML tab
+  useEffect(() => {
+    if (activeTab === 'html' && selectedFile) {
+      loadPreviewHtml(selectedFile);
+    } else {
+        // Clear preview if tab changes or file is deselected
+        setPreviewHtml(null);
+        setPreviewError(null);
+    }
+  }, [selectedFile, activeTab]);
+
+  // Handle preview button click
+  const handlePreviewClick = (filename: string) => {
+    setSelectedFile(filename);
+  };
+
+  // Download function remains mostly the same, but consider implications for protected files
   const handleDownload = (filename: string, type: "html" | "jsonl") => {
     let url = "";
     if (type === "html") {
@@ -51,14 +94,13 @@ export default function FilesPage() {
     } else {
       url = apiService.getJsonlFileUrl(filename);
     }
-
-    // 打开新窗口下载
-    window.open(url, "_blank");
-  };
-
-  // 预览HTML文件
-  const handlePreview = (filename: string) => {
-    setSelectedFile(filename);
+    // Direct download might fail for protected files if backend requires auth
+    // Consider fetching blob via apiService and using FileSaver if direct download fails
+    // For now, keep the simple window.open approach
+    toast.info(`尝试打开下载链接: ${filename}`, {
+        description: "如果文件受保护，直接下载可能失败。"
+    })
+    window.open(url, "_blank"); 
   };
 
   return (
@@ -122,27 +164,44 @@ export default function FilesPage() {
                       <CardDescription>HTML预览文件</CardDescription>
                     </CardHeader>
                     <CardContent className="p-4 pt-0 flex gap-2">
-                      <Dialog>
+                      <Dialog onOpenChange={(open) => {
+                          // When dialog closes, clear selected file to allow re-opening the same file preview
+                          if (!open) {
+                              setSelectedFile(null); 
+                          }
+                      }}>
                         <DialogTrigger asChild>
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handlePreview(filename)}
+                            onClick={() => handlePreviewClick(filename)}
                           >
                             <ExternalLink className="h-4 w-4 mr-2" />
                             预览
                           </Button>
                         </DialogTrigger>
-                        <DialogContent className="max-w-4xl max-h-screen">
+                        <DialogContent className="max-w-4xl h-[90vh] flex flex-col">
                           <DialogHeader>
-                            <DialogTitle>预览: {selectedFile}</DialogTitle>
+                            <DialogTitle>预览: {filename}</DialogTitle>
                           </DialogHeader>
-                          <div className="h-[70vh] mt-2">
-                            {selectedFile && (
+                          <div className="flex-1 mt-2 border rounded overflow-hidden">
+                            {isPreviewLoading && (
+                               <div className="flex items-center justify-center h-full">
+                                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                                <p className="ml-2 text-muted-foreground">加载预览中...</p>
+                              </div>
+                            )}
+                            {previewError && (
+                              <div className="flex items-center justify-center h-full p-4">
+                                 <p className="text-red-600 dark:text-red-400 text-center">{previewError}</p>
+                              </div>
+                            )}
+                            {!isPreviewLoading && !previewError && previewHtml && (
                               <iframe
-                                src={apiService.getHtmlPreviewUrl(selectedFile)}
-                                className="preview-iframe"
-                                title={selectedFile}
+                                srcDoc={previewHtml}
+                                className="w-full h-full border-0"
+                                title={`预览: ${filename}`}
+                                sandbox="allow-scripts allow-same-origin"
                               />
                             )}
                           </div>
