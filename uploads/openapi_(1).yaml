@@ -1,0 +1,554 @@
+openapi: 3.0.3
+info:
+  title: OLMOCR Processing API
+  description: API for processing PDF files using OLMOCR, managing tasks, and exporting results.
+  version: 1.0.0
+servers:
+  - url: http://localhost:7860
+    description: Local development server
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Description of the error.
+      required:
+        - error
+    TaskResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Success message.
+        task_id:
+          type: string
+          description: Unique identifier for the processing task.
+      required:
+        - message
+        - task_id
+    TaskStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [queued, processing, completed, failed]
+          description: Current status of the task.
+        mode:
+          type: string
+          enum: [normal, fast]
+          description: Processing mode used.
+        start_time:
+          type: number
+          format: float
+          description: Task start time (Unix timestamp).
+        original_filename:
+          type: string
+          description: Original name of the uploaded file.
+        logs:
+          type: array
+          items:
+            type: string
+          description: Log messages for the task.
+        params:
+          type: object
+          description: Parameters used for processing.
+        result:
+          type: object
+          properties:
+            jsonl_path:
+              type: string
+              nullable: true
+              description: Path to the JSONL output file.
+            html_path:
+              type: string
+              nullable: true
+              description: Path to the HTML preview file.
+        error:
+          type: string
+          nullable: true
+          description: Error message if the task failed.
+        olmocr_stdout:
+          type: string
+          description: Standard output from OLMOCR process.
+        olmocr_stderr:
+          type: string
+          description: Standard error from OLMOCR process.
+        elapsed_time_seconds:
+          type: number
+          format: float
+          description: Time elapsed since task start.
+    FileList:
+      type: object
+      properties:
+        preview_files:
+          type: array
+          items:
+            type: string
+          description: List of available HTML preview files.
+        jsonl_files:
+          type: array
+          items:
+            type: string
+          description: List of available JSONL files.
+    ClearCacheResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Status of the operation (e.g., "success").
+        message:
+          type: string
+          description: Descriptive message about the operation result.
+      required:
+        - status
+        - message
+    GPUStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Status of GPU monitoring.
+        error:
+          type: string
+          nullable: true
+          description: Error message if GPU monitoring failed.
+        gpus:
+          type: array
+          nullable: true
+          items:
+            type: object
+            properties:
+              index:
+                type: integer
+              name:
+                type: string
+              memory_total:
+                type: integer
+              memory_used:
+                type: integer
+              memory_free:
+                type: integer
+              utilization:
+                type: integer
+          description: List of GPU statistics, or null if no GPUs are available.
+paths:
+  /process:
+    post:
+      summary: Start PDF processing with OLMOCR
+      description: Upload a PDF file and start processing with OLMOCR in normal or fast mode.
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: PDF file to process.
+                mode:
+                  type: string
+                  enum: [normal, fast]
+                  default: normal
+                  description: Processing mode.
+                target_dim:
+                  type: integer
+                  description: Target dimension for processing (required).
+                anchor_len:
+                  type: integer
+                  description: Anchor length for processing (required).
+                error_rate:
+                  type: number
+                  format: float
+                  description: Error rate (required in normal mode, ignored in fast mode).
+                max_context:
+                  type: integer
+                  description: Maximum context size (required).
+                max_retries:
+                  type: integer
+                  description: Maximum retries (required in normal mode, ignored in fast mode).
+              required:
+                - file
+                - target_dim
+                - anchor_len
+                - max_context
+              description: >-
+                In 'normal' mode, 'error_rate' and 'max_retries' are required. 
+                In 'fast' mode, they are ignored. 
+                Defaults: error_rate=0.05, max_retries=5.
+      responses:
+        '202':
+          description: Processing started successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+        '400':
+          description: Invalid request (missing file, invalid file type, or missing parameters).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                missingFile:
+                  summary: Missing file
+                  value: { "error": "No file part in the request" }
+                invalidFileType:
+                  summary: Invalid file type
+                  value: { "error": "No selected file or invalid file type (must be .pdf)" }
+                missingParams:
+                  summary: Missing parameters
+                  value: { "error": "Missing required parameters for mode 'normal': error_rate, max_retries" }
+        '401':
+          description: Unauthorized (invalid or missing API key).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error during processing initiation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /process/{task_id}:
+    get:
+      summary: Get task status
+      description: Retrieve the status and details of a specific processing task.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique identifier of the task.
+      responses:
+        '200':
+          description: Task status retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskStatus'
+        '401':
+          description: Unauthorized (invalid or missing API key).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Task not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /files/previews:
+    get:
+      summary: List HTML preview files
+      description: Retrieve a list of available HTML preview files.
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: List of preview files retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileList'
+        '401':
+          description: Unauthorized (invalid or missing API key).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error while listing files.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /files/previews/{filename}:
+    get:
+      summary: Download HTML preview file
+      description: Download a specific HTML preview file.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Name of the HTML preview file.
+      responses:
+        '200':
+          description: File downloaded successfully.
+          content:
+            text/html:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Invalid filename (e.g., path traversal attempt).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized (invalid or missing API key).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: File not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error while sending file.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /files/jsonl:
+    get:
+      summary: List JSONL files
+      description: Retrieve a list of available JSONL files.
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: List of JSONL files retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileList'
+        '401':
+          description: Unauthorized (invalid or missing API key).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error while listing files.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /files/jsonl/{filename}:
+    get:
+      summary: Download JSONL file
+      description: Download a specific JSONL file.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Name of the JSONL file.
+      responses:
+        '200':
+          description: File downloaded successfully.
+          content:
+            application/x-jsonlines:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Invalid filename (e.g., path traversal attempt).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized (invalid or missing API key).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: File not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error while sending file.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /export/html:
+    get:
+      summary: Export HTML files as ZIP
+      description: Export all HTML preview files as a ZIP archive.
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: ZIP archive downloaded successfully.
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        '401':
+          description: Unauthorized (invalid or missing API key).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No HTML files available for export.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error during export.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /export/{export_format}:
+    get:
+      summary: Export combined files as ZIP
+      description: Export processed files in MD or DOCX format (with HTML) as a ZIP archive.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: export_format
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [md, docx]
+          description: Export format (Markdown or DOCX).
+      responses:
+        '200':
+          description: ZIP archive downloaded successfully.
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Invalid export format.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized (invalid or missing API key).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No JSONL files available for export.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error during export.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /cache/temp:
+    delete:
+      summary: Clear temporary workspace
+      description: Clear temporary directories used by OLMOCR.
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Temporary workspace cleared successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClearCacheResponse'
+        '401':
+          description: Unauthorized (invalid or missing API key).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error while clearing workspace.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /cache/processed:
+    delete:
+      summary: Clear processed data
+      description: Clear all processed PDF, JSONL, and HTML files.
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Processed data cleared successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClearCacheResponse'
+        '401':
+          description: Unauthorized (invalid or missing API key).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error while clearing data.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /status/gpu:
+    get:
+      summary: Get GPU status
+      description: Retrieve the current status and statistics of available GPUs.
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: GPU status retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GPUStatus'
+        '401':
+          description: Unauthorized (invalid or missing API key).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error while retrieving GPU status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '501':
+          description: GPU monitoring not implemented.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'

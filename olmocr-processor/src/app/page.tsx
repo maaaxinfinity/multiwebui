@@ -1,0 +1,308 @@
+"use client";
+
+import { useState } from "react";
+import { toast } from "sonner";
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useRouter } from "next/navigation";
+import { FilePond, registerPlugin } from "react-filepond";
+import FilePondPluginFileValidateType from "filepond-plugin-file-validate-type";
+import FilePondPluginFileValidateSize from "filepond-plugin-file-validate-size";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { MainLayout } from "@/components/layout/main-layout";
+import { apiService } from "@/services/api";
+import { useTask } from "@/context/task-context";
+
+// 导入 FilePond 样式
+import "filepond/dist/filepond.min.css";
+
+// 注册FilePond插件
+registerPlugin(FilePondPluginFileValidateType, FilePondPluginFileValidateSize);
+
+// 表单验证模式
+const processSchema = z.object({
+  mode: z.enum(["normal", "fast"]).default("normal"),
+  target_dim: z.coerce.number().int().positive(),
+  anchor_len: z.coerce.number().int().positive(),
+  error_rate: z.coerce.number().min(0).max(1).optional(),
+  max_context: z.coerce.number().int().positive(),
+  max_retries: z.coerce.number().int().positive().optional(),
+});
+
+type ProcessFormValues = z.infer<typeof processSchema>;
+
+// 定义FilePond文件类型
+interface FilePondFile {
+  file: File;
+  [key: string]: any;
+}
+
+export default function HomePage() {
+  const router = useRouter();
+  const { addTask } = useTask();
+  const [files, setFiles] = useState<FilePondFile[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // 表单默认值
+  const form = useForm<ProcessFormValues>({
+    resolver: zodResolver(processSchema),
+    defaultValues: {
+      mode: "normal",
+      target_dim: 1024,
+      anchor_len: 32,
+      error_rate: 0.05,
+      max_context: 512,
+      max_retries: 5,
+    },
+  });
+
+  // 监听模式变化，判断是否需要显示error_rate和max_retries
+  const selectedMode = form.watch("mode");
+
+  // 处理表单提交
+  const onSubmit = async (data: ProcessFormValues) => {
+    if (files.length === 0) {
+      toast.error("请先上传PDF文件");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      // 准备处理参数
+      const params = {
+        file: files[0].file,
+        mode: data.mode,
+        target_dim: data.target_dim,
+        anchor_len: data.anchor_len,
+        max_context: data.max_context,
+      };
+
+      // 根据模式添加额外参数
+      if (data.mode === "normal") {
+        Object.assign(params, {
+          error_rate: data.error_rate,
+          max_retries: data.max_retries,
+        });
+      }
+
+      // 调用API进行处理
+      const response = await apiService.processPdf(params);
+
+      // 添加任务到任务列表
+      addTask(response.task_id);
+
+      // 显示成功消息
+      toast.success("文件上传成功，开始处理", {
+        description: `任务ID: ${response.task_id}`,
+      });
+
+      // 跳转到任务页面
+      router.push("/tasks");
+    } catch (error: unknown) {
+      console.error("Processing error:", error);
+
+      const errorMsg = error instanceof Error
+        ? error.message
+        : '未知错误';
+
+      toast.error("处理失败", {
+        description: errorMsg,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <MainLayout>
+      <div className="flex flex-col space-y-6">
+        <div className="flex flex-col md:flex-row gap-4 justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">PDF文件处理</h1>
+            <p className="text-muted-foreground mt-1">
+              上传PDF文件并使用OLMOCR进行文档处理
+            </p>
+          </div>
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>上传PDF文件</CardTitle>
+              <CardDescription>
+                选择要处理的PDF文件，文件大小限制为50MB
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <FilePond
+                files={files}
+                onupdatefiles={setFiles}
+                allowMultiple={false}
+                maxFiles={1}
+                name="file"
+                labelIdle='拖放文件或 <span class="filepond--label-action">浏览</span>'
+                acceptedFileTypes={["application/pdf"]}
+                maxFileSize="50MB"
+                disabled={isSubmitting}
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>处理参数</CardTitle>
+              <CardDescription>
+                配置OLMOCR处理参数以获得最佳结果
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                  <FormField
+                    control={form.control}
+                    name="mode"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>处理模式</FormLabel>
+                        <Select
+                          onValueChange={field.onChange}
+                          defaultValue={field.value}
+                          disabled={isSubmitting}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="选择处理模式" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="normal">普通模式（更准确）</SelectItem>
+                            <SelectItem value="fast">快速模式（更快）</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>
+                          普通模式精度更高但速度较慢，快速模式速度更快但可能精度略低
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <FormField
+                      control={form.control}
+                      name="target_dim"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>目标尺寸</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              {...field}
+                              disabled={isSubmitting}
+                            />
+                          </FormControl>
+                          <FormDescription>图像处理的目标尺寸</FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="anchor_len"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>锚点长度</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              {...field}
+                              disabled={isSubmitting}
+                            />
+                          </FormControl>
+                          <FormDescription>处理锚点的长度</FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <FormField
+                    control={form.control}
+                    name="max_context"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>最大上下文</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            {...field}
+                            disabled={isSubmitting}
+                          />
+                        </FormControl>
+                        <FormDescription>最大上下文长度</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {selectedMode === "normal" && (
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <FormField
+                        control={form.control}
+                        name="error_rate"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>错误率</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                {...field}
+                                disabled={isSubmitting}
+                              />
+                            </FormControl>
+                            <FormDescription>容许的错误率（0-1）</FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="max_retries"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>最大重试次数</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                {...field}
+                                disabled={isSubmitting}
+                              />
+                            </FormControl>
+                            <FormDescription>处理失败时的重试次数</FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  )}
+
+                  <Button type="submit" className="w-full" disabled={isSubmitting || files.length === 0}>
+                    {isSubmitting ? "处理中..." : "开始处理"}
+                  </Button>
+                </form>
+              </Form>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </MainLayout>
+  );
+}
