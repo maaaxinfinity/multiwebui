@@ -37,19 +37,46 @@ export interface ClearCacheResponse {
   message: string;
 }
 
-export interface GPUInfo {
-  index: number;
-  name: string;
-  memory_total: number;
-  memory_used: number;
-  memory_free: number;
-  utilization: number;
-}
+// export interface GPUInfo {
+//   index: number;
+//   name: string;
+//   memory_total: number;
+//   memory_used: number;
+//   memory_free: number;
+//   utilization: number;
+// }
+// 
+// export interface GPUStatus {
+//   status: string;
+//   error: string | null;
+//   gpus: GPUInfo[] | null;
+// }
 
-export interface GPUStatus {
-  status: string;
-  error: string | null;
-  gpus: GPUInfo[] | null;
+export interface SystemStatus {
+  cpu: {
+    logical_count: number;
+    percent_usage: number;
+    physical_count: number;
+  };
+  gpu: {
+    gpu_utilization_percent: number;
+    memory_controller_utilization_percent: number;
+    memory_total_gb: number;
+    memory_used_gb: number;
+    memory_used_percent: number;
+  };
+  memory: {
+    available_gb: number;
+    percent_used: number;
+    total_gb: number;
+    used_gb: number;
+  };
+  numa: {
+    available: boolean;
+    node_count: number;
+    nodes_summary: string;
+    raw_output: string;
+  };
 }
 
 // Interface for the /process request body parameters

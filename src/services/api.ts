@@ -4,7 +4,7 @@ import type {
   TaskStatus,
   FileList,
   ClearCacheResponse,
-  GPUStatus,
+  SystemStatus,
   ApiError,
   ProcessRequestParams
 } from '@/types/api';
@@ -122,9 +122,9 @@ export const apiService = {
     return response.data;
   },
 
-  // 获取GPU状态
-  async getGpuStatus(): Promise<GPUStatus> {
-    const response = await api.get<GPUStatus>('/status/gpu');
+  // 获取系统状态 (Previously getGpuStatus)
+  async getSystemStatus(): Promise<SystemStatus> {
+    const response = await api.get<SystemStatus>('/status/system');
     return response.data;
   },
 
