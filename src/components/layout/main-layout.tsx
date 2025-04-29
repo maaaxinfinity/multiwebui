@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FileText, UploadCloud, List, Package, Cog, Cpu } from "lucide-react";
+import { FileText, UploadCloud, List, Package, Cog, Cpu, HardDrive } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
 import { Button } from "@/components/ui/button";
 import { AuthGuard } from "@/components/auth-guard";
@@ -41,7 +41,7 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
       icon: <Package className="h-5 w-5" />,
     },
     {
-      label: "系统管理",
+      label: "系统信息",
       href: "/system",
       icon: <Cog className="h-5 w-5" />,
     },
