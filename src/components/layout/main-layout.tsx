@@ -41,13 +41,13 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
       icon: <Package className="h-5 w-5" />,
     },
     {
-      label: "系统信息",
+      label: "系统管理",
       href: "/system",
       icon: <Cog className="h-5 w-5" />,
     },
     {
-      label: "GPU状态",
-      href: "/gpu",
+      label: "系统状态",
+      href: "/status",
       icon: <Cpu className="h-5 w-5" />,
     },
   ];

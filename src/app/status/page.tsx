@@ -227,7 +227,7 @@ export default function SystemStatusPage() {
               </ul>
             </div>
             <p className="text-muted-foreground">
-              数据每10秒自动更新一次，也可以手动点击刷新按钮获取最新状态。
+              数据每2秒自动更新一次，也可以手动点击刷新按钮获取最新状态。
             </p>
           </CardContent>
         </Card>
