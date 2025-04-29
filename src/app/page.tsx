@@ -24,17 +24,38 @@ import "filepond/dist/filepond.min.css";
 // 注册FilePond插件
 registerPlugin(FilePondPluginFileValidateType, FilePondPluginFileValidateSize);
 
-// 表单验证模式
+// Base schema with all params optional except mode
 const processSchema = z.object({
-  mode: z.enum(["normal", "fast"]).default("normal"),
-  target_dim: z.coerce.number().int().positive(),
-  anchor_len: z.coerce.number().int().positive(),
+  mode: z.enum(["normal", "fast"]).default("fast"),
+  target_dim: z.coerce.number().int().positive().optional(),
+  anchor_len: z.coerce.number().int().positive().optional(),
+  max_context: z.coerce.number().int().positive().optional(),
   error_rate: z.coerce.number().min(0).max(1).optional(),
-  max_context: z.coerce.number().int().positive(),
   max_retries: z.coerce.number().int().positive().optional(),
 });
 
-type ProcessFormValues = z.infer<typeof processSchema>;
+// Refine schema: ensure all params are defined when mode is 'normal'
+const refinedSchema = processSchema.refine(
+  (data) => {
+    if (data.mode === "normal") {
+      return (
+        data.target_dim !== undefined &&
+        data.anchor_len !== undefined &&
+        data.max_context !== undefined &&
+        data.error_rate !== undefined &&
+        data.max_retries !== undefined
+      );
+    }
+    // For 'fast' mode, only mode is required by this refinement
+    return true;
+  },
+  {
+    message: "所有参数在普通模式下都是必需的",
+    // Path can be refined later if more specific error messages per field are needed
+  }
+);
+
+type ProcessFormValues = z.infer<typeof refinedSchema>;
 
 // 定义FilePond文件类型
 interface FilePondFile {
@@ -48,23 +69,23 @@ export default function HomePage() {
   const [files, setFiles] = useState<FilePondFile[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 表单默认值
+  // 表单默认值 - provide defaults for all fields
   const form = useForm<ProcessFormValues>({
-    resolver: zodResolver(processSchema),
+    resolver: zodResolver(refinedSchema),
     defaultValues: {
-      mode: "normal",
-      target_dim: 1024,
-      anchor_len: 32,
-      error_rate: 0.05,
-      max_context: 512,
-      max_retries: 5,
+      mode: "fast",
+      target_dim: 1024, // Default for when switching to normal
+      anchor_len: 32,   // Default for when switching to normal
+      max_context: 512, // Default for when switching to normal
+      error_rate: 0.1,  // Default shown in fast mode (disabled)
+      max_retries: 3,   // Default shown in fast mode (disabled)
     },
   });
 
-  // 监听模式变化，判断是否需要显示error_rate和max_retries
+  // 监听模式变化
   const selectedMode = form.watch("mode");
 
-  // 处理表单提交
+  // 处理表单提交 - Send all form data, backend interprets based on mode
   const onSubmit = async (data: ProcessFormValues) => {
     if (files.length === 0) {
       toast.error("请先上传PDF文件");
@@ -73,25 +94,18 @@ export default function HomePage() {
 
     setIsSubmitting(true);
     try {
-      // 准备处理参数
-      const params = {
-        file: files[0].file,
+      // Send all parameters from the form state
+      // Backend should handle logic based on the 'mode' field
+      const finalParams = {
         mode: data.mode,
         target_dim: data.target_dim,
         anchor_len: data.anchor_len,
         max_context: data.max_context,
+        error_rate: data.error_rate,
+        max_retries: data.max_retries,
       };
-
-      // 根据模式添加额外参数
-      if (data.mode === "normal") {
-        Object.assign(params, {
-          error_rate: data.error_rate,
-          max_retries: data.max_retries,
-        });
-      }
-
-      // 调用API进行处理
-      const response = await apiService.processPdf(params);
+        
+      const response = await apiService.processPdf(files[0].file, finalParams as any);
 
       // 添加任务到任务列表
       addTask(response.task_id);
@@ -105,12 +119,17 @@ export default function HomePage() {
       router.push("/tasks");
     } catch (error: unknown) {
       console.error("Processing error:", error);
+      
+      // Extract Zod errors if available
+      let errorMsg = '处理失败';
+      if (error instanceof z.ZodError) {
+        // Combine messages from Zod issues
+        errorMsg = error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
+      } else if (error instanceof Error) {
+        errorMsg = error.message;
+      }
 
-      const errorMsg = error instanceof Error
-        ? error.message
-        : '未知错误';
-
-      toast.error("处理失败", {
+      toast.error("提交出错", { // Changed title for clarity
         description: errorMsg,
       });
     } finally {
@@ -180,113 +199,62 @@ export default function HomePage() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="normal">普通模式（更准确）</SelectItem>
+                            <SelectItem value="normal">普通模式（更准确，需额外参数）</SelectItem>
                             <SelectItem value="fast">快速模式（更快）</SelectItem>
                           </SelectContent>
                         </Select>
                         <FormDescription>
-                          普通模式精度更高但速度较慢，快速模式速度更快但可能精度略低
+                          选择处理速度和精度。普通模式需要设置错误率和重试次数。
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
 
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <FormField
-                      control={form.control}
-                      name="target_dim"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>目标尺寸</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              {...field}
-                              disabled={isSubmitting}
-                            />
-                          </FormControl>
-                          <FormDescription>图像处理的目标尺寸</FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="anchor_len"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>锚点长度</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              {...field}
-                              disabled={isSubmitting}
-                            />
-                          </FormControl>
-                          <FormDescription>处理锚点的长度</FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  <FormField
-                    control={form.control}
-                    name="max_context"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>最大上下文</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            {...field}
-                            disabled={isSubmitting}
+                  {/* Normal Mode Parameters - Conditionally Rendered */}
+                  {selectedMode === 'normal' && (
+                    <div className="space-y-4 border-t pt-4 mt-4 border-dashed">
+                       <p className="text-sm font-medium text-muted-foreground">普通模式参数:</p>
+                       <div className="grid gap-4 md:grid-cols-2">
+                          <FormField
+                            control={form.control}
+                            name="target_dim"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>目标尺寸</FormLabel>
+                                <FormControl>
+                                  <Input type="number" {...field} disabled={isSubmitting} />
+                                </FormControl>
+                                <FormDescription>图像处理的目标尺寸</FormDescription>
+                                <FormMessage />
+                              </FormItem>
+                            )}
                           />
-                        </FormControl>
-                        <FormDescription>最大上下文长度</FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  {selectedMode === "normal" && (
-                    <div className="grid gap-4 md:grid-cols-2">
+                          <FormField
+                            control={form.control}
+                            name="anchor_len"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>锚点长度</FormLabel>
+                                <FormControl>
+                                  <Input type="number" {...field} disabled={isSubmitting} />
+                                </FormControl>
+                                <FormDescription>处理锚点的长度</FormDescription>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                       </div>
                       <FormField
                         control={form.control}
-                        name="error_rate"
+                        name="max_context"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>错误率</FormLabel>
+                            <FormLabel>最大上下文</FormLabel>
                             <FormControl>
-                              <Input
-                                type="number"
-                                step="0.01"
-                                {...field}
-                                disabled={isSubmitting}
-                              />
+                              <Input type="number" {...field} disabled={isSubmitting} />
                             </FormControl>
-                            <FormDescription>容许的错误率（0-1）</FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={form.control}
-                        name="max_retries"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>最大重试次数</FormLabel>
-                            <FormControl>
-                              <Input
-                                type="number"
-                                {...field}
-                                disabled={isSubmitting}
-                              />
-                            </FormControl>
-                            <FormDescription>处理失败时的重试次数</FormDescription>
+                            <FormDescription>最大上下文长度</FormDescription>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -294,7 +262,44 @@ export default function HomePage() {
                     </div>
                   )}
 
-                  <Button type="submit" className="w-full" disabled={isSubmitting || files.length === 0}>
+                  {/* Error Rate and Max Retries - Always Rendered, Conditionally Disabled */}
+                  <div className={`grid gap-4 md:grid-cols-2 ${selectedMode === 'normal' ? 'border-t pt-4 mt-4 border-dashed' : ''}`}>
+                     { /* Add title only in normal mode where other params are also shown */}
+                    {selectedMode === 'normal' && <p className="md:col-span-2 text-sm font-medium text-muted-foreground -mb-2">错误率与重试:</p>}
+                    <FormField
+                      control={form.control}
+                      name="error_rate"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>最大错误率</FormLabel>
+                          <FormControl>
+                            {/* Disabled when fast mode is selected */}
+                            <Input type="number" step="0.01" {...field} disabled={selectedMode === 'fast' || isSubmitting} />
+                          </FormControl>
+                          <FormDescription>允许的最大错误率 (0-1)</FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="max_retries"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>最大重试次数</FormLabel>
+                          <FormControl>
+                             {/* Disabled when fast mode is selected */}
+                            <Input type="number" {...field} disabled={selectedMode === 'fast' || isSubmitting} />
+                          </FormControl>
+                          <FormDescription>处理失败时的最大重试次数</FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  
+                  {/* Submit Button */}
+                  <Button type="submit" disabled={isSubmitting || files.length === 0} className="w-full">
                     {isSubmitting ? "处理中..." : "开始处理"}
                   </Button>
                 </form>
