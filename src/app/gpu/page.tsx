@@ -34,7 +34,7 @@ export default function SystemStatusPage() {
     loadSystemStatus();
     const interval = setInterval(() => {
       loadSystemStatus();
-    }, 10000);
+    }, 2000);
 
     return () => clearInterval(interval);
   }, []);
