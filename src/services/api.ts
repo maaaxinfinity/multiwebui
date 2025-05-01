@@ -176,6 +176,46 @@ export const apiService = {
     return { blob: response.data, filename };
   },
 
+  // 获取JSONL文件Blob (New function for authenticated download)
+  async getJsonlFileBlob(filename: string): Promise<{ blob: Blob, filename: string }> {
+    const url = this.getJsonlFileUrl(filename); // Use existing URL generator
+    const response = await api.get<Blob>(url, { responseType: 'blob' });
+
+    // Try to get filename from Content-Disposition header, fallback to original
+    let downloadFilename = filename;
+    const disposition = response.headers['content-disposition'];
+    if (disposition) {
+      const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+      const matches = filenameRegex.exec(disposition);
+      if (matches != null && matches[1]) {
+        downloadFilename = matches[1].replace(/['"]/g, '');
+      }
+    }
+    return { blob: response.data, filename: downloadFilename };
+  },
+
+  // 获取HTML文件Blob (New function for authenticated download)
+  async getHtmlFileBlob(filename: string): Promise<{ blob: Blob, filename: string }> {
+    const url = this.getHtmlPreviewUrl(filename); // Use existing URL generator
+    const response = await api.get<Blob>(url, { responseType: 'blob' });
+
+    // Try to get filename from Content-Disposition header, fallback to original
+    let downloadFilename = filename;
+    const disposition = response.headers['content-disposition'];
+    if (disposition) {
+      const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+      const matches = filenameRegex.exec(disposition);
+      if (matches != null && matches[1]) {
+        downloadFilename = matches[1].replace(/['"]/g, '');
+      }
+    }
+    // Ensure the filename ends with .html if not specified by header
+    if (!downloadFilename.toLowerCase().endsWith('.html')) {
+        downloadFilename += '.html';
+    }
+    return { blob: response.data, filename: downloadFilename };
+  },
+
   // 删除任务及其文件 (New function)
   async deleteTaskWithFiles(taskId: string): Promise<{ message: string }> { // Define a simple success response type
     const response = await api.delete<{ message: string }>(`/tasks/${taskId}`); // Use DELETE method

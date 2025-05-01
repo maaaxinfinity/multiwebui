@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { saveAs } from 'file-saver';
 import { toast } from "sonner";
 import { Download, RefreshCw, ExternalLink, FileJson, FileText, Loader2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,6 +34,7 @@ export default function FilesPage() {
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [isDownloading, setIsDownloading] = useState<Record<string, boolean>>({});
 
   // 加载文件列表
   const loadFiles = async () => {
@@ -100,21 +102,27 @@ export default function FilesPage() {
     setSelectedFile(filename);
   };
 
-  // Download function remains mostly the same, but consider implications for protected files
-  const handleDownload = (filename: string, type: "html" | "jsonl") => {
-    let url = "";
-    if (type === "html") {
-      url = apiService.getHtmlPreviewUrl(filename);
-    } else {
-      url = apiService.getJsonlFileUrl(filename);
+  // Modified handleDownload function to use apiService and file-saver
+  const handleDownload = async (filename: string, type: "html" | "jsonl") => {
+    setIsDownloading(prev => ({ ...prev, [filename]: true }));
+    const baseFilename = getBaseFilename(filename);
+    toast.info(`开始下载: ${baseFilename}`);
+    try {
+      let result: { blob: Blob, filename: string };
+      if (type === "html") {
+        result = await apiService.getHtmlFileBlob(filename);
+      } else {
+        result = await apiService.getJsonlFileBlob(filename);
+      }
+      saveAs(result.blob, result.filename);
+      toast.success(`下载成功: ${result.filename}`);
+    } catch (error) {
+        console.error(`Failed to download ${type} file ${filename}:`, error);
+        const errorMsg = error instanceof Error ? error.message : "无法连接到服务器或未经授权";
+        toast.error(`下载失败: ${baseFilename}`, { description: errorMsg });
+    } finally {
+        setIsDownloading(prev => ({ ...prev, [filename]: false }));
     }
-    // Direct download might fail for protected files if backend requires auth
-    // Consider fetching blob via apiService and using FileSaver if direct download fails
-    // For now, keep the simple window.open approach
-    toast.info(`尝试打开下载链接: ${filename}`, {
-        description: "如果文件受保护，直接下载可能失败。"
-    })
-    window.open(url, "_blank"); 
   };
 
   return (
@@ -163,7 +171,7 @@ export default function FilesPage() {
           </TabsList>
 
           <TabsContent value="html" className="mt-4">
-            {fileList.preview_files.length === 0 ? (
+            {(fileList.preview_files ?? []).length === 0 ? (
               <Card>
                 <CardContent className="flex flex-col items-center justify-center py-6">
                   <FileText className="h-10 w-10 text-muted-foreground mb-2" />
@@ -172,7 +180,7 @@ export default function FilesPage() {
               </Card>
             ) : (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {fileList.preview_files.map((filename) => (
+                {(fileList.preview_files ?? []).map((filename) => (
                   <Card key={filename}>
                     <CardHeader className="p-4">
                       <Tooltip>
@@ -235,9 +243,14 @@ export default function FilesPage() {
                         variant="outline"
                         size="sm"
                         onClick={() => handleDownload(filename, "html")}
+                        disabled={isDownloading[filename]}
                       >
-                        <Download className="h-4 w-4 mr-2" />
-                        下载
+                        {isDownloading[filename] ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                            <Download className="h-4 w-4 mr-2" />
+                        )}
+                        {isDownloading[filename] ? "下载中..." : "下载"}
                       </Button>
                     </CardContent>
                   </Card>
@@ -247,7 +260,7 @@ export default function FilesPage() {
           </TabsContent>
 
           <TabsContent value="jsonl" className="mt-4">
-            {fileList.jsonl_files.length === 0 ? (
+            {(fileList.jsonl_files ?? []).length === 0 ? (
               <Card>
                 <CardContent className="flex flex-col items-center justify-center py-6">
                   <FileJson className="h-10 w-10 text-muted-foreground mb-2" />
@@ -256,7 +269,7 @@ export default function FilesPage() {
               </Card>
             ) : (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {fileList.jsonl_files.map((filename) => (
+                {(fileList.jsonl_files ?? []).map((filename) => (
                   <Card key={filename}>
                     <CardHeader className="p-4">
                       <Tooltip>
@@ -271,14 +284,19 @@ export default function FilesPage() {
                       </Tooltip>
                       <CardDescription>JSONL数据文件</CardDescription>
                     </CardHeader>
-                    <CardContent className="p-4 pt-0">
+                    <CardContent className="p-4 pt-0 flex gap-2">
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => handleDownload(filename, "jsonl")}
+                        disabled={isDownloading[filename]}
                       >
-                        <Download className="h-4 w-4 mr-2" />
-                        下载
+                        {isDownloading[filename] ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                            <Download className="h-4 w-4 mr-2" />
+                        )}
+                        {isDownloading[filename] ? "下载中..." : "下载"}
                       </Button>
                     </CardContent>
                   </Card>
