@@ -3,11 +3,12 @@
 import React, { useEffect, useState, useMemo, MouseEvent, ChangeEvent } from "react";
 import { toast } from "sonner";
 import { format } from "date-fns";
-import { ClipboardCopy, RefreshCw, Trash, Eye, AlertCircle, Terminal, Trash2, Loader2 } from "lucide-react";
+import { ClipboardCopy, RefreshCw, Trash, Eye, AlertCircle, Terminal, Trash2, Loader2, CheckSquare, Square } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MainLayout } from "@/components/layout/main-layout";
 import { useTask, Task, TaskStatus } from "@/context/task-context";
@@ -49,12 +50,42 @@ export default function TasksPage() {
   const [activeTab, setActiveTab] = useState("all");
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
 
   const filteredTasks = useMemo(() => {
     return activeTab === "all"
       ? tasks
       : tasks.filter((task: Task) => task.status && task.status.status === activeTab);
   }, [tasks, activeTab]);
+
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null;
+
+    if (autoRefreshEnabled) {
+      console.log("Starting auto-refresh interval (5s)");
+      intervalId = setInterval(async () => {
+        console.log("Auto-refresh triggered...");
+        if (!refreshing && !isDeleting) {
+          try {
+            await refreshAllTasks();
+          } catch (error) {
+            console.error("Auto-refresh failed:", error);
+          }
+        } else {
+           console.log("Skipping auto-refresh (already refreshing or deleting)");
+        }
+      }, 5000);
+    } else {
+       console.log("Auto-refresh disabled.");
+    }
+
+    return () => {
+      if (intervalId) {
+        console.log("Clearing auto-refresh interval");
+        clearInterval(intervalId);
+      }
+    };
+  }, [autoRefreshEnabled, refreshAllTasks, refreshing, isDeleting]);
 
   const handleRefreshAll = async () => {
     setRefreshing(true);
@@ -154,7 +185,7 @@ export default function TasksPage() {
               查看和管理您的OLMOCR处理任务
             </p>
           </div>
-          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+          <div className="flex items-center gap-4 flex-wrap sm:flex-nowrap">
              <AlertDialog>
                 <AlertDialogTrigger asChild>
                    <Button
@@ -190,6 +221,18 @@ export default function TasksPage() {
                   </AlertDialogFooter>
                 </AlertDialogContent>
              </AlertDialog>
+
+             <div className="flex items-center space-x-2">
+               <Checkbox
+                 id="auto-refresh-checkbox"
+                 checked={autoRefreshEnabled}
+                 onCheckedChange={(checked) => setAutoRefreshEnabled(Boolean(checked))}
+                 disabled={refreshing || isDeleting}
+               />
+               <Label htmlFor="auto-refresh-checkbox" className="text-sm whitespace-nowrap">
+                 自动刷新 (5s)
+               </Label>
+             </div>
 
             <Button
               variant="outline"
@@ -273,7 +316,15 @@ export default function TasksPage() {
                              <TableCell>
                                 {task.status ? format(new Date(task.status.start_time * 1000), "yyyy-MM-dd HH:mm:ss") : '-'}
                              </TableCell>
-                             <TableCell>{task.status ? `${task.status.elapsed_time_seconds.toFixed(1)}秒` : '-'}</TableCell>
+                             <TableCell>
+                              {task.status?.status === 'queued' ? (
+                                <span className="text-muted-foreground">-</span>
+                              ) : task.status ? (
+                                `${task.status.elapsed_time_seconds.toFixed(1)}秒`
+                              ) : (
+                                '-'
+                              )}
+                            </TableCell>
                              <TableCell className="text-right pr-4">
                                   <Dialog onOpenChange={(open) => { if (!open) setSelectedTaskIdForDialog(null); }}>
                                     <DialogTrigger asChild>
