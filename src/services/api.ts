@@ -163,7 +163,8 @@ export const apiService = {
     const response = await api.get<Blob>(url, { responseType: 'blob' });
     
     // Try to get filename from Content-Disposition header
-    let filename = `export.${format === 'html' ? 'zip' : format}`;
+    // Default to 'export.zip' for all formats now, assuming backend zips md/docx too
+    let filename = 'export.zip'; 
     const disposition = response.headers['content-disposition'];
     if (disposition) {
       const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
