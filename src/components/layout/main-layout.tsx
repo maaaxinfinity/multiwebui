@@ -173,8 +173,8 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
         {/* 页脚 */}
         <footer className="border-t py-4 bg-background">
           <div className="container flex flex-col items-center justify-center gap-1 md:flex-row md:justify-between text-sm text-muted-foreground">
-            <p>© {new Date().getFullYear()} OLMOCR Processor. All rights reserved.</p>
-            <p>Version 1.0.0</p>
+            <p>© {new Date().getFullYear()} OLMOCR Processor by Limitee. All rights reserved.</p>
+            <p>Version 0.2.0</p>
           </div>
         </footer>
       </div>

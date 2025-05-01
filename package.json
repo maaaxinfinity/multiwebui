@@ -1,6 +1,7 @@
 {
   "name": "olmocr-processor",
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "author": "Limitee",
   "private": true,
   "scripts": {
     "dev": "next dev -H 0.0.0.0 --turbopack",
