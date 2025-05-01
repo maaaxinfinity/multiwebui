@@ -1,8 +1,8 @@
-openapi: 3.0.3
+openapi: 3.1.0
 info:
   title: OLMOCR Processing API
-  description: API for processing PDF files using OLMOCR, managing tasks, and exporting results.
-  version: 1.0.0
+  description: API for processing PDF files using OLMOCR, managing tasks, files, system status and exporting results.
+  version: 1.1.0
 servers:
   - url: http://localhost:7860
     description: Local development server
@@ -36,6 +36,9 @@ components:
     TaskStatus:
       type: object
       properties:
+        task_id:
+          type: string
+          description: Unique identifier of the task.
         status:
           type: string
           enum: [queued, processing, completed, failed]
@@ -47,7 +50,7 @@ components:
         start_time:
           type: number
           format: float
-          description: Task start time (Unix timestamp).
+          description: Task creation time (Unix timestamp).
         original_filename:
           type: string
           description: Original name of the uploaded file.
@@ -83,7 +86,15 @@ components:
         elapsed_time_seconds:
           type: number
           format: float
-          description: Time elapsed since task start.
+          description: >-
+            Time elapsed. Calculated as (current_time - processing_start_time) for 'processing' status,
+            or total duration (completion_time - processing_start_time) for 'completed'/'failed' status.
+            Returns 0 for 'queued' status. Requires backend logic to track processing_start_time.
+      required:
+        - task_id
+        - status
+        - start_time
+        - elapsed_time_seconds
     FileList:
       type: object
       properties:
@@ -109,16 +120,25 @@ components:
       required:
         - status
         - message
-    GPUStatus:
+    SystemStatus:
       type: object
       properties:
-        status:
-          type: string
-          description: Status of GPU monitoring.
-        error:
-          type: string
-          nullable: true
-          description: Error message if GPU monitoring failed.
+        cpu_percent:
+          type: number
+          format: float
+          description: Current system-wide CPU utilization percentage.
+        memory_percent:
+          type: number
+          format: float
+          description: Current system-wide memory utilization percentage.
+        total_memory_gb:
+            type: number
+            format: float
+            description: Total system memory in GB.
+        used_memory_gb:
+            type: number
+            format: float
+            description: Used system memory in GB.
         gpus:
           type: array
           nullable: true
@@ -129,15 +149,34 @@ components:
                 type: integer
               name:
                 type: string
-              memory_total:
+              memory_total_mb:
                 type: integer
-              memory_used:
+              memory_used_mb:
                 type: integer
-              memory_free:
+              memory_free_mb:
                 type: integer
-              utilization:
+              utilization_gpu_percent:
                 type: integer
-          description: List of GPU statistics, or null if no GPUs are available.
+              utilization_memory_percent:
+                type: integer
+          description: List of GPU statistics, or null if no GPUs detected or monitoring failed.
+        error:
+          type: string
+          nullable: true
+          description: Error message if status retrieval failed.
+      required:
+        - cpu_percent
+        - memory_percent
+        - total_memory_gb
+        - used_memory_gb
+    DeleteTaskResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Success message confirming deletion.
+      required:
+        - message
 paths:
   /process:
     post:
@@ -159,33 +198,32 @@ paths:
                 mode:
                   type: string
                   enum: [normal, fast]
-                  default: normal
+                  default: fast
                   description: Processing mode.
                 target_dim:
                   type: integer
-                  description: Target dimension for processing (required).
+                  description: Target dimension for processing.
                 anchor_len:
                   type: integer
-                  description: Anchor length for processing (required).
+                  description: Anchor length for processing.
                 error_rate:
                   type: number
                   format: float
-                  description: Error rate (required in normal mode, ignored in fast mode).
+                  default: 0.05
+                  description: Max error rate (used in 'normal' mode, ignored in 'fast' mode).
                 max_context:
                   type: integer
-                  description: Maximum context size (required).
+                  description: Maximum context size.
                 max_retries:
                   type: integer
-                  description: Maximum retries (required in normal mode, ignored in fast mode).
+                  default: 5
+                  description: Max retries (used in 'normal' mode, ignored in 'fast' mode).
               required:
                 - file
-                - target_dim
-                - anchor_len
-                - max_context
               description: >-
-                In 'normal' mode, 'error_rate' and 'max_retries' are required. 
-                In 'fast' mode, they are ignored. 
-                Defaults: error_rate=0.05, max_retries=5.
+                Parameters 'target_dim', 'anchor_len', and 'max_context' are always required.
+                Parameters 'error_rate' and 'max_retries' are used only in 'normal' mode.
+                The backend will validate required parameters based on the selected 'mode'.
       responses:
         '202':
           description: Processing started successfully.
@@ -194,7 +232,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/TaskResponse'
         '400':
-          description: Invalid request (missing file, invalid file type, or missing parameters).
+          description: Invalid request (missing file, invalid file type, or missing parameters based on mode).
           content:
             application/json:
               schema:
@@ -206,9 +244,12 @@ paths:
                 invalidFileType:
                   summary: Invalid file type
                   value: { "error": "No selected file or invalid file type (must be .pdf)" }
-                missingParams:
-                  summary: Missing parameters
+                missingParamsNormal:
+                  summary: Missing parameters for normal mode
                   value: { "error": "Missing required parameters for mode 'normal': error_rate, max_retries" }
+                missingParamsAny:
+                  summary: Missing always required parameters
+                  value: { "error": "Missing required parameters: target_dim, anchor_len, max_context" }
         '401':
           description: Unauthorized (invalid or missing API key).
           content:
@@ -249,6 +290,74 @@ paths:
                 $ref: '#/components/schemas/Error'
         '404':
           description: Task not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /tasks:
+    get:
+      summary: List all tasks
+      description: Retrieve the status and details of all processing tasks stored in the database.
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: List of all tasks retrieved successfully.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskStatus'
+        '401':
+          description: Unauthorized (invalid or missing API key).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error while retrieving tasks.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /tasks/{task_id}:
+    delete:
+      summary: Delete a task and its files
+      description: >-
+        Permanently delete a specific task record and its associated files
+        (e.g., original PDF, generated HTML, JSONL) from the server.
+        This action cannot be undone.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique identifier of the task to delete.
+      responses:
+        '200':
+          description: Task and associated files deleted successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteTaskResponse'
+        '401':
+          description: Unauthorized (invalid or missing API key).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Task not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error during deletion.
           content:
             application/json:
               schema:
@@ -521,19 +630,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-  /status/gpu:
+  /status/system:
     get:
-      summary: Get GPU status
-      description: Retrieve the current status and statistics of available GPUs.
+      summary: Get system status
+      description: Retrieve current system resource usage (CPU, Memory) and optional GPU statistics.
       security:
         - ApiKeyAuth: []
       responses:
         '200':
-          description: GPU status retrieved successfully.
+          description: System status retrieved successfully.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/GPUStatus'
+                $ref: '#/components/schemas/SystemStatus'
         '401':
           description: Unauthorized (invalid or missing API key).
           content:
@@ -541,13 +650,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '500':
-          description: Server error while retrieving GPU status.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '501':
-          description: GPU monitoring not implemented.
+          description: Server error while retrieving system status.
           content:
             application/json:
               schema:
