@@ -1,13 +1,16 @@
 import type React from 'react';
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { TaskStatus } from '@/types/api';
 import { apiService } from '@/services/api';
 
-interface Task {
+// Export Task and TaskStatus types
+export interface Task {
   id: string;
   status: TaskStatus | null;
   lastUpdated: number;
 }
+
+export type { TaskStatus };
 
 type TaskContextType = {
   tasks: Task[];
@@ -24,26 +27,54 @@ const TaskContext = createContext<TaskContextType | undefined>(undefined);
 export function TaskProvider({ children }: { children: React.ReactNode }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false);
 
-  // 从本地存储恢复任务列表
+  // 保存任务列表到本地存储 (只在非首次加载后执行)
   useEffect(() => {
-    const savedTasks = localStorage.getItem('olmocr-tasks');
-    if (savedTasks) {
-      try {
-        const parsedTasks = JSON.parse(savedTasks);
-        setTasks(parsedTasks);
-      } catch (error) {
-        console.error('Failed to parse saved tasks:', error);
-      }
-    }
-  }, []);
-
-  // 保存任务列表到本地存储
-  useEffect(() => {
-    if (tasks.length > 0) {
+    if (isInitialLoadComplete && tasks.length >= 0) { // Allow saving empty list if cleared
       localStorage.setItem('olmocr-tasks', JSON.stringify(tasks));
     }
-  }, [tasks]);
+  }, [tasks, isInitialLoadComplete]);
+
+  // 刷新所有任务状态 (现在从 /tasks 端点获取)
+  const refreshAllTasks = useCallback(async () => {
+    console.log("Refreshing all tasks from /tasks endpoint...");
+    try {
+      const allStatuses = await apiService.getAllTasks();
+      // Map the statuses received from the backend to the Task structure
+      const updatedTasks = allStatuses.map((status: TaskStatus): Task => ({
+        id: status.task_id, // Assuming the task ID is in status.task_id
+        status: status,
+        lastUpdated: Date.now(),
+      }));
+
+      // Sort tasks by start time descending (most recent first)
+      updatedTasks.sort((a, b) => {
+          const timeA = a.status?.start_time ?? 0;
+          const timeB = b.status?.start_time ?? 0;
+          return timeB - timeA; // Descending order
+      });
+
+      setTasks(updatedTasks);
+    } catch (error) {
+      console.error('Failed to refresh all tasks:', error);
+      // Optionally: Handle error, e.g., show a toast notification
+      // You might want to clear tasks or show an error state
+      setTasks([]); // Example: Clear tasks on error
+    } finally {
+       if (!isInitialLoadComplete) {
+           setIsInitialLoadComplete(true);
+       }
+    }
+  }, [isInitialLoadComplete]);
+
+  // 首次加载时从 API 获取任务列表
+  useEffect(() => {
+    if (!isInitialLoadComplete) {
+       console.log("Initial task load from API...");
+       refreshAllTasks();
+    }
+  }, [refreshAllTasks, isInitialLoadComplete]); // Add dependencies
 
   // 添加任务
   const addTask = (taskId: string) => {
@@ -91,13 +122,6 @@ export function TaskProvider({ children }: { children: React.ReactNode }) {
       );
     } catch (error) {
       console.error(`Failed to refresh task ${taskId}:`, error);
-    }
-  };
-
-  // 刷新所有任务状态
-  const refreshAllTasks = async () => {
-    for (const task of tasks) {
-      await refreshTask(task.id);
     }
   };
 

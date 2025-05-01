@@ -43,7 +43,7 @@ const getStatusBadge = (status: TaskStatus['status'] | undefined): React.ReactNo
 };
 
 export default function TasksPage() {
-  const { tasks, activeTaskId, setActiveTaskId, removeTask, refreshTask, refreshAllTasks } = useTask();
+  const { tasks, activeTaskId, setActiveTaskId, removeTask, refreshAllTasks } = useTask();
   const [refreshing, setRefreshing] = useState(false);
   const [selectedTaskIdForDialog, setSelectedTaskIdForDialog] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("all");
@@ -55,22 +55,6 @@ export default function TasksPage() {
       ? tasks
       : tasks.filter((task: Task) => task.status && task.status.status === activeTab);
   }, [tasks, activeTab]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const processingTasks = tasks.filter((task: Task) =>
-        task.status?.status === "queued" || task.status?.status === "processing"
-      );
-      if (processingTasks.length > 0) {
-        processingTasks.forEach((task: Task) => {
-          if (!document.hidden) {
-             refreshTask(task.id);
-          }
-        });
-      }
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [tasks, refreshTask]);
 
   const handleRefreshAll = async () => {
     setRefreshing(true);

@@ -78,6 +78,12 @@ export const apiService = {
     return response.data;
   },
 
+  // 获取所有任务列表 (New function)
+  async getAllTasks(): Promise<TaskStatus[]> { // Assuming the endpoint returns an array of TaskStatus
+    const response = await api.get<TaskStatus[]>('/tasks');
+    return response.data;
+  },
+
   // 获取HTML预览文件列表
   async getFilesList(): Promise<FileList> {
     const response = await api.get<FileList>('/files/previews');
