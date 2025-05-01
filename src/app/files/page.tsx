@@ -10,6 +10,20 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { MainLayout } from "@/components/layout/main-layout";
 import { apiService } from "@/services/api";
 import type { FileList } from "@/types/api";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+
+// Helper function to get the base filename from a path
+const getBaseFilename = (fullPath: string | null | undefined): string => {
+  if (!fullPath) return "";
+  // Find the last directory separator (either / or \)
+  const lastSeparatorIndex = Math.max(fullPath.lastIndexOf('/'), fullPath.lastIndexOf('\\'));
+  // If a separator is found, return the substring after it
+  if (lastSeparatorIndex >= 0) {
+    return fullPath.substring(lastSeparatorIndex + 1);
+  }
+  // Otherwise, return the original string (it might already be just a filename)
+  return fullPath;
+};
 
 export default function FilesPage() {
   const [fileList, setFileList] = useState<FileList>({ preview_files: [], jsonl_files: [] });
@@ -105,6 +119,7 @@ export default function FilesPage() {
 
   return (
     <MainLayout>
+      <TooltipProvider>
       <div className="flex flex-col space-y-6">
         <div className="flex flex-col md:flex-row gap-4 justify-between">
           <div>
@@ -160,7 +175,16 @@ export default function FilesPage() {
                 {fileList.preview_files.map((filename) => (
                   <Card key={filename}>
                     <CardHeader className="p-4">
-                      <CardTitle className="text-base font-medium truncate">{filename}</CardTitle>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <CardTitle className="text-base font-medium truncate cursor-help">
+                            {getBaseFilename(filename)}
+                          </CardTitle>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>{filename}</p>
+                        </TooltipContent>
+                      </Tooltip>
                       <CardDescription>HTML预览文件</CardDescription>
                     </CardHeader>
                     <CardContent className="p-4 pt-0 flex gap-2">
@@ -235,7 +259,16 @@ export default function FilesPage() {
                 {fileList.jsonl_files.map((filename) => (
                   <Card key={filename}>
                     <CardHeader className="p-4">
-                      <CardTitle className="text-base font-medium truncate">{filename}</CardTitle>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <CardTitle className="text-base font-medium truncate cursor-help">
+                            {getBaseFilename(filename)}
+                          </CardTitle>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>{filename}</p>
+                        </TooltipContent>
+                      </Tooltip>
                       <CardDescription>JSONL数据文件</CardDescription>
                     </CardHeader>
                     <CardContent className="p-4 pt-0">
@@ -255,6 +288,7 @@ export default function FilesPage() {
           </TabsContent>
         </Tabs>
       </div>
+      </TooltipProvider>
     </MainLayout>
   );
 }

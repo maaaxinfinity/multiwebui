@@ -86,57 +86,63 @@ export default function HomePage() {
   // 监听模式变化
   const selectedMode = form.watch("mode");
 
-  // 处理表单提交 - Send all form data, backend interprets based on mode
+  // 处理表单提交 - Handle multiple files
   const onSubmit = async (data: ProcessFormValues) => {
     if (files.length === 0) {
-      toast.error("请先上传PDF文件");
+      toast.error("请先上传至少一个PDF文件"); // Updated message
       return;
     }
 
     setIsSubmitting(true);
-    try {
-      // Send all parameters from the form state
-      // Backend should handle logic based on the 'mode' field
-      const finalParams = {
-        mode: data.mode,
-        target_dim: data.target_dim,
-        anchor_len: data.anchor_len,
-        max_context: data.max_context,
-        error_rate: data.error_rate,
-        max_retries: data.max_retries,
-      };
-        
-      const response = await apiService.processPdf(files[0].file, finalParams as Omit<ProcessRequestParams, 'file'>);
+    const submittedTaskIds: string[] = [];
+    let errorCount = 0;
 
-      // 添加任务到任务列表
-      addTask(response.task_id);
+    // Process each file
+    for (const fileItem of files) {
+      try {
+        const finalParams = {
+          mode: data.mode,
+          target_dim: data.target_dim,
+          anchor_len: data.anchor_len,
+          max_context: data.max_context,
+          error_rate: data.error_rate,
+          max_retries: data.max_retries,
+        };
 
-      // 显示成功消息
-      toast.success("文件上传成功，开始处理", {
-        description: `任务ID: ${response.task_id}`,
-      });
+        // Call API for each file
+        const response = await apiService.processPdf(fileItem.file, finalParams as any);
+        submittedTaskIds.push(response.task_id);
+        addTask(response.task_id); // Add each task to context
 
-      // 跳转到任务页面
-      router.push("/tasks");
-    } catch (error: unknown) {
-      console.error("Processing error:", error);
-      
-      // Extract Zod errors if available
-      let errorMsg = '处理失败';
-      if (error instanceof z.ZodError) {
-        // Combine messages from Zod issues
-        errorMsg = error.errors.map((e: z.ZodIssue) => `${e.path.join('.')}: ${e.message}`).join(', ');
-      } else if (error instanceof Error) {
-        errorMsg = error.message;
-      } else if (typeof error === 'string') {
-        errorMsg = error;
+      } catch (error: unknown) {
+        errorCount++;
+        console.error(`Error processing file ${fileItem.file.name}:`, error);
+        let errorMsg = '处理失败';
+         if (error instanceof z.ZodError) {
+          errorMsg = error.errors.map((e: z.ZodIssue) => `${e.path.join('.')}: ${e.message}`).join(', ');
+        } else if (error instanceof Error) {
+          errorMsg = error.message;
+        } else if (typeof error === 'string') {
+          errorMsg = error;
+        }
+        toast.error(`处理文件 ${fileItem.file.name} 失败`, { description: errorMsg });
       }
+    }
 
-      toast.error("提交出错", { // Changed title for clarity
-        description: errorMsg,
-      });
-    } finally {
-      setIsSubmitting(false);
+    setIsSubmitting(false);
+
+    // Show summary toast
+    if (submittedTaskIds.length > 0) {
+       toast.success(`${submittedTaskIds.length} 个文件已提交处理`, {
+         description: `任务ID: ${submittedTaskIds.join(", ")}`,
+       });
+       // Optionally clear files after successful submission of at least one
+       setFiles([]); 
+       // Optionally navigate away
+       // router.push("/tasks"); 
+    }
+    if (errorCount > 0 && submittedTaskIds.length === 0) {
+         toast.error("所有文件处理失败，请检查错误信息或重试。");
     }
   };
 
@@ -164,10 +170,9 @@ export default function HomePage() {
               <FilePond
                 files={files}
                 onupdatefiles={setFiles}
-                allowMultiple={false}
-                maxFiles={1}
-                name="file"
-                labelIdle='拖放文件或 <span class="filepond--label-action">浏览</span>'
+                allowMultiple={true}
+                name="files"
+                labelIdle='拖放文件或 <span class="filepond--label-action">浏览</span> (可多选)'
                 acceptedFileTypes={["application/pdf"]}
                 maxFileSize="50MB"
                 disabled={isSubmitting}
@@ -302,8 +307,12 @@ export default function HomePage() {
                   </div>
                   
                   {/* Submit Button */}
-                  <Button type="submit" disabled={isSubmitting || files.length === 0} className="w-full">
-                    {isSubmitting ? "处理中..." : "开始处理"}
+                  <Button 
+                    type="submit" 
+                    disabled={isSubmitting || files.length === 0} 
+                    className="w-full"
+                  >
+                    {isSubmitting ? "处理中..." : `开始处理 ${files.length} 个文件`}
                   </Button>
                 </form>
               </Form>

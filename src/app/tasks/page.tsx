@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MainLayout } from "@/components/layout/main-layout";
-import { useTask } from "@/context/task-context";
+import { useTask, Task, TaskStatus } from "@/context/task-context";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
@@ -22,12 +22,12 @@ export default function TasksPage() {
   // 自动刷新任务状态
   useEffect(() => {
     const interval = setInterval(() => {
-      const processingTasks = tasks.filter(task =>
+      const processingTasks = tasks.filter((task: Task) =>
         task.status?.status === "queued" || task.status?.status === "processing"
       );
 
       if (processingTasks.length > 0) {
-        processingTasks.forEach(task => {
+        processingTasks.forEach((task: Task) => {
           refreshTask(task.id);
         });
       }
@@ -69,19 +69,19 @@ export default function TasksPage() {
   // 根据状态获取任务列表
   const filteredTasks = activeTab === "all"
     ? tasks
-    : tasks.filter(task => task.status?.status === activeTab);
+    : tasks.filter((task: Task) => task.status?.status === activeTab);
 
   // 获取任务状态标签
-  const getStatusBadge = (status: string | undefined) => {
+  const getStatusBadge = (status: TaskStatus['status'] | undefined): React.ReactNode => {
     switch (status) {
       case "queued":
-        return <Badge variant="outline" className="status-queued">排队中</Badge>;
+        return <Badge variant="outline">排队中</Badge>;
       case "processing":
-        return <Badge variant="outline" className="status-processing">处理中</Badge>;
+        return <Badge variant="secondary">处理中</Badge>;
       case "completed":
-        return <Badge variant="outline" className="status-completed">已完成</Badge>;
+        return <Badge variant="default">已完成</Badge>;
       case "failed":
-        return <Badge variant="outline" className="status-failed">失败</Badge>;
+        return <Badge variant="destructive">失败</Badge>;
       default:
         return <Badge variant="outline">未知</Badge>;
     }
@@ -143,7 +143,7 @@ export default function TasksPage() {
                 {filteredTasks.map((task) => (
                   <Card
                     key={task.id}
-                    className={activeTaskId === task.id ? "border-2 border-primary" : ""}
+                    className={`border-2 ${activeTaskId === task.id ? "border-primary" : "border-transparent"}`}
                     onClick={() => setActiveTaskId(task.id)}
                   >
                     <CardHeader className="p-4">
@@ -243,6 +243,42 @@ export default function TasksPage() {
                                       </AccordionContent>
                                     </AccordionItem>
 
+                                    {selectedTask.status.olmocr_stdout && (
+                                      <AccordionItem value="stdout">
+                                        <AccordionTrigger className="text-sm font-medium">
+                                          <div className="flex items-center gap-2">
+                                            <Terminal className="h-4 w-4" />
+                                            OLMOCR 标准输出
+                                          </div>
+                                        </AccordionTrigger>
+                                        <AccordionContent>
+                                          <div className="bg-muted p-2 rounded-md text-xs font-mono h-60 overflow-y-auto">
+                                            <pre className="whitespace-pre-wrap">
+                                              {selectedTask.status.olmocr_stdout}
+                                            </pre>
+                                          </div>
+                                        </AccordionContent>
+                                      </AccordionItem>
+                                    )}
+
+                                    {selectedTask.status.olmocr_stderr && (
+                                      <AccordionItem value="stderr">
+                                        <AccordionTrigger className="text-sm font-medium text-amber-600 dark:text-amber-400">
+                                          <div className="flex items-center gap-2">
+                                            <AlertCircle className="h-4 w-4" />
+                                            OLMOCR 标准错误
+                                          </div>
+                                        </AccordionTrigger>
+                                        <AccordionContent>
+                                          <div className="bg-muted p-2 rounded-md text-xs font-mono h-60 overflow-y-auto">
+                                            <pre className="whitespace-pre-wrap">
+                                              {selectedTask.status.olmocr_stderr}
+                                            </pre>
+                                          </div>
+                                        </AccordionContent>
+                                      </AccordionItem>
+                                    )}
+
                                     {selectedTask.status.error && (
                                       <AccordionItem value="error">
                                         <AccordionTrigger className="text-sm font-medium text-destructive">
@@ -254,6 +290,27 @@ export default function TasksPage() {
                                         <AccordionContent>
                                           <div className="bg-destructive/10 p-2 rounded-md text-xs font-mono text-destructive overflow-x-auto">
                                             <pre className="whitespace-pre-wrap">{selectedTask.status.error}</pre>
+                                          </div>
+                                        </AccordionContent>
+                                      </AccordionItem>
+                                    )}
+
+                                    {selectedTask.status.status === "completed" && selectedTask.status.result && (
+                                      <AccordionItem value="result">
+                                        <AccordionTrigger className="text-sm font-medium">
+                                          <div className="flex items-center gap-2">
+                                            <ClipboardCopy className="h-4 w-4" />
+                                            结果文件
+                                          </div>
+                                        </AccordionTrigger>
+                                        <AccordionContent>
+                                          <div className="space-y-2">
+                                            {selectedTask.status.result.jsonl_path && (
+                                              <p className="text-sm">JSONL: {selectedTask.status.result.jsonl_path}</p>
+                                            )}
+                                            {selectedTask.status.result.html_path && (
+                                              <p className="text-sm">HTML: {selectedTask.status.result.html_path}</p>
+                                            )}
                                           </div>
                                         </AccordionContent>
                                       </AccordionItem>
@@ -278,26 +335,26 @@ export default function TasksPage() {
                       </div>
                     </CardHeader>
                     <CardContent className="px-4 pb-4 pt-0">
-                      <div className="flex flex-col md:flex-row gap-2">
-                        <div className="text-sm">
+                      <div className="flex flex-row flex-wrap items-center gap-x-4 gap-y-1">
+                        <div className="text-sm whitespace-nowrap">
                           <span className="text-muted-foreground">任务ID: </span>
                           <span className="font-mono">{task.id.substring(0, 10)}...</span>
                         </div>
                         {task.status && (
                           <>
-                            <div className="text-sm md:ml-4">
+                            <div className="text-sm whitespace-nowrap">
                               <span className="text-muted-foreground">模式: </span>
                               <span>{task.status.mode === "normal" ? "普通" : "快速"}</span>
                             </div>
-                            <div className="text-sm md:ml-4">
+                            <div className="text-sm whitespace-nowrap">
                               <span className="text-muted-foreground">开始时间: </span>
                               <span>
-                                {format(new Date(task.status.start_time * 1000), "yyyy-MM-dd HH:mm:ss")}
+                                {format(new Date(task.status.start_time * 1000), "yy-MM-dd HH:mm")}
                               </span>
                             </div>
-                            <div className="text-sm md:ml-4">
+                            <div className="text-sm whitespace-nowrap">
                               <span className="text-muted-foreground">用时: </span>
-                              <span>{task.status.elapsed_time_seconds.toFixed(2)}秒</span>
+                              <span>{task.status.elapsed_time_seconds.toFixed(1)}秒</span>
                             </div>
                           </>
                         )}
