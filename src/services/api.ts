@@ -169,4 +169,10 @@ export const apiService = {
 
     return { blob: response.data, filename };
   },
+
+  // 删除任务及其文件 (New function)
+  async deleteTaskWithFiles(taskId: string): Promise<{ message: string }> { // Define a simple success response type
+    const response = await api.delete<{ message: string }>(`/tasks/${taskId}`); // Use DELETE method
+    return response.data;
+  },
 };
